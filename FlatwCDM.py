@@ -13,7 +13,8 @@ import scipy.integrate as sci
 h0 = 73.3
 c = 299792458
 
-def E(x,m,w): #The actual Hubble Parameter Calculation
+#| The actual Hubble Parameter Calculation
+def E(x,m,w): 
     return np.sqrt(m*(1+x)**(3) +(1-m)*(1+x)**(3*(1+6*w-3)))
     
 def f(x,m,w):
@@ -32,7 +33,8 @@ def modelMU(x,theta):
 df = pd.read_table('pantheon1.txt', sep = ' ',engine='python')
 cov = np.reshape(np.loadtxt('Pantheon+SH0ES_STAT+SYS.cov.txt'), [1701,1701])
 
-cutoff = 0.03 #Where the systematics are chosen for the analysis
+#| Where the systematics are chosen for the analysis
+cutoff = 0.03 
 #df.loc[(df['zHD'] < cutoff)] = 0
 
 mask = (df['zHD'] > cutoff) & (df['IS_CALIBRATOR'] == 0)
@@ -68,20 +70,3 @@ settings.read_resume = False
 #| Run PolyChord
 
 output = pypolychord.run_polychord(LCDMlihood, nDims, nDerived, settings, prior)
-
-#attempt to make a corner plot
-import corner
-paramnames = [('p%i' % i, r'\theta_%i' % i) for i in range(nDims)]
-paramnames += [('r*', 'r')]
-df = pd.read_table('chains/bayescos_equal_weights.txt', sep = '  ',engine='python', names = ['a','b']+paramnames)
-samples = np.zeros([nDims,len(df['a'])])
-for i in range(nDims):
-    samples[i,:] = df[paramnames[i]].to_numpy()
-samples[0] = 2*samples[0] +18
-samples[1] = samples[1]*100
-samples[3] = 6*samples[3]-3
-
-figure = corner.corner(samples.T,labels = [r"$\Omega _m$",r"$H_0$", r"$w$"],show_titles=True,
-    title_kwargs={"fontsize": 12})
-figure.savefig('posterior.pdf')
-

@@ -6,151 +6,138 @@ try:
     from mpi4py import MPI
 except ImportError:
     pass
-from astropy.cosmology import wCDM
 
 import pandas as pd
 import numpy as np
 import scipy.integrate as sci
-h0 = 73.3
+
 c = 299792458
 
 
 #| Hubble Parameter via different models
-     
+ 
 def f1(x,m): #Flat LCDM D=3
-    E = np.sqrt(m*(1+x)**(3)+(1-m)) 
-    return 1/E 
+    y = m*(1+x)**(3)+(1-m)
+    return y 
 
 def f2(x,m,w): #wCDM D=4
-    W = 6*w-3
-    E = np.sqrt(m*(1+x)**(3)+(1-m)*(1+x)**(3*(1+W))) 
-    return 1/E
-    
-def f2R(x,m,w): #wCDM w/ radiation D=4
-    W = 6*w-3
-    E = np.sqrt(m*(1+x)**(3)+0.00008*(1+x)**4+(1-m-0.00008)*(1+x)**(3*(1+W))) 
-    return 1/E
+    y =m*(1+x)**(3)+(1-m)*(1+x)**(3*(1+w))
+    return y
     
 def f3(x,m,d): #Slow-Roll D=4
-    D = 3*d-2
-    E = np.sqrt(m*(1+x)**(3)+(1-m)*((1+x)**3/(m*(1+x)**3+1-m))**(D/(1-m)))
-    return 1/E
+    y = m*(1+x)**(3)+(1-m)*((1+x)**3/(m*(1+x)**3+1-m))**(d/(1-m))
+    return y
 
-def f4(x,m,B): #Bimetric Gravity D=4
-    B1 = B*6
+def f4(x,m,B1): #Bimetric Gravity D=4
     B0 = 3*(1-m)-(B1)**2
     G = 0.5*m*(1+x)**(3) + B0/6
-    E = np.sqrt(G + np.sqrt(G**2+((B1)**2)/3))
-    return 1/E
+    y = G + np.sqrt(G**2+((B1)**2)/3)
+    return y
 
 def f5(x,m,w,p): #Algebraic Thawing D=5
     alpha = 1/(1.3)
-    P = (8*p-4)/3
-    W = 8*w-4
-    E = np.sqrt(m*(1+x)**3+(1-m)*np.exp(((1+W)/(alpha*P))*(1-(1-alpha + alpha/((1+x)**3))**P)))
-    return 1/E
+    y = m*(1+x)**3+(1-m)*np.exp(((1+w)/(alpha*p))*(1-(1-alpha + alpha/((1+x)**3))**p))
+    return y
 
 def f6(x,m,e,v): #Growing Neutrino Mass D=5
-    V = 0.4*v
     A = 1/(1+x)
-    DS = np.array(((1-m)*A**3+2*V*(A**1.5-A**3))/(1-(1-m)*(1-A**3)+2*V*(A**1.5-A**3)))
-    DS[DS < 0.25*e] = 0.25*e
-    E = np.sqrt((m*(1+x)**3)/(1-DS))
-    return 1/E
+    DS = np.array(((1-m)*A**3+2*v*(A**1.5-A**3))/(1-(1-m)*(1-A**3)+2*v*(A**1.5-A**3)))
+    DS[DS < e] = e
+    y = (m*(1+x)**3)/(1-DS)
+    return y
 
-def f7(x,m,D): #Dark Energy Tranisiton D=4
-    d = D-0.4
+def f7(x,m,d): #Dark Energy Tranisiton D=4
     S = 0.5*(1-np.tanh((x-0.1)/(0.01)))
-    S0 = 0.5*(1-np.tanh(-10))
-    E = np.sqrt(m*(1+x)**3+(1-m)*(1+(2*d*S)/((1+m)*S0)))
-    return 1/E
+    S0 = 0.5*(1-np.tanh  (-10))
+    y = m*(1+x)**3+(1-m)*(1+(2*d*S)/((1+m)*S0))
+    return y
 
-def f8(x,q,j,s): #Cosmographic Expansion D=5
-    Q = 10*q-5
-    J = 10*j-5
-    S = 20*s-10
-    E = 1+(1+Q)*x+0.5*(J-Q**2)*x**2+(1/6)*(3*Q**3+3*Q**2+J*(3+4*Q)-S)*x**3
-    return 1/E
-    
-def f9(x,M,K): #CURVEDLCDM D=4
-    m = 0.88*M + 0.12
-    k = K - 0.5
-    E = np.sqrt(m*(1+x)**(3)+k*(1+x)**(2)+(1-m-k)) 
-    return 1/E 
-  
-def f10(x,M,K,W): #curvedwCDM D=5
-    w = 6*W-3
-    m = 0.88*M + 0.12
-    k = K - 0.5
-    E = np.sqrt(m*(1+x)**(3)+k*(1+x)**(2)+(1-m-k)*(1+x)**(3*(1+w)))  
-    return 1/E
+def f9(x,m,k): #CURVEDLCDM D=4
+    y = m*(1+x)**(3)+k*(1+x)**(2)+(1-m-k)
+    return y
+        
+        
+def f10(x,m,k,w): #CURVEDwCDM D=5
+    y = m*(1+x)**(3)+k*(1+x)**(2)+(1-m-k)*(1+x)**(3*(1+w))
+    return y
 
-def modelMU(theta):
-    mb, h = theta[0:2]
-    params = theta[2:]
-    y = f1(z,*params)
-    p0 = sci.quad(f1,0,z[0],args=(*params,))[0]
-    cumultrapz = np.append([0],sci.cumtrapz(y,z))
-    lumdist = (c/(100000*(0.5*h+0.5)))*np.multiply((1+z),(p0+cumultrapz))
-    return 5*np.log10(lumdist)+25-(2*mb+18)
+def distfunc(x,params): #The function on the inside of the luminosity distance integral
+    return 1/np.sqrt(f(x,*params))
 
-def curvedmodelMU(theta):
-    mb, h = theta[0:2]
-    params = theta[2:]
-    #k = -1*(theta[3])*(h/(3.086*10**19))**2/(c**2)
-    k = theta[3]-0.5
-    y = f10(z,*params)
-    p0 = sci.quad(f10,0,z[0],args=(*params,))[0]
-    cumultrapz = np.append([0],sci.cumtrapz(y,z))
-    #print(k)
-    if k>0:
-        comovdist = np.sinh((p0+cumultrapz)*np.sqrt(k))/np.sqrt(k)
+
+def sinn(DC,k=0): #The Sinn function, which accounts for the geometry
+    if k>0: 
+        return np.sinh(DC*np.sqrt(k))/np.sqrt(k)
     elif k == 0:
-        comovdist = (p0+cumultrapz)
+        return DC
     else:
-        comovdist = np.sin((p0+cumultrapz)*np.sqrt(-k))/np.sqrt(-k)
-    #comovdist = (p0+cumultrapz)
-    lumdist = (c/(100000*(0.5*h+0.5)))*np.multiply((1+z),comovdist)
-    return 5*np.log10(lumdist)+25-(2*mb+18)  
+        return np.sin(DC*np.sqrt(-k))/np.sqrt(-k)
 
-#| The Pantheon+ Data and Covariance is read in
 df = pd.read_table('pantheon1.txt', sep = ' ',engine='python')
-print('DF loaded')
-cov = np.reshape(np.loadtxt('Pantheon+SH0ES_STAT+SYS.cov.txt'), [1701,1701])
-print('Matrix Loaded')
+cov = np.reshape(np.loadtxt('Pantheon+COV.cov.txt'), [1701,1701])
 
-Zcutoff = 0.03 #Where the systematics are chosen for the analysis
-Mcutoff = 10
+Zcutoff = 0.023 #Where the systematics are chosen for the analysis
 
-mask = (df['zHD'] > Zcutoff) & (df['IS_CALIBRATOR'] == 0) & (df['HOST_LOGMASS'] < Mcutoff)
+mask = (df['zHD'] > Zcutoff) & (df['IS_CALIBRATOR'] == 0)
 
 mbcorr = df['m_b_corr'].to_numpy()[mask]
 z = df['zHD'].to_numpy()[mask]
 mcov = cov[mask, :][:, mask]
 mcovinv = np.linalg.inv(mcov)
+mcovlogdet = np.linalg.slogdet(mcov)[1]
+
+N = len(z)
 
 def LCDMlihood(theta):
     nDims = len(theta)
-    hr = mbcorr-curvedmodelMU(theta)
-    logL = float(-0.5*np.dot(hr,np.dot(mcovinv,hr)))
-    return logL, []
+    Mb = theta[0]
+    h = theta[1]
+    params = theta[-i[1]:]  
+
+    #| Checks for unphysical universes
+    H2 = f(z,*params)
+    if any(H2<=0): #Any negative H2 expressions are unphysical, therefore have likelihood 0
+      return -np.inf, []
+    DC0 = sci.quad(distfunc,0,z[0],args=(params,))[0] #Distance to first SNe
+    DC = np.append([0],sci.cumtrapz(1/np.sqrt(H2),z)) + DC0 #Summing distances to the remaining SNe
+    comov = DC
     
-#| Define a box uniform prior from -1 to 1
+    if Curved == True:
+      k = params[1]
+      comov = sinn(DC,k) #Adjusting for geometry
+      if any(comov<= 0): #This means the universe is too closed, i.e. the max distance is further than the universe's radius
+        return -np.inf, []
+    
+    MU = 5*np.log10((c/(1000*h))*np.multiply((1+z),comov))+25 #+25 from converting to parsecs inside the log
+    
+    hr = (mbcorr-Mb)-MU
+    logL = float(-0.5*(np.dot(hr,np.dot(mcovinv,hr)) + mcovlogdet + N*np.log(2*np.pi) ))
+    
+    return logL, []
+
+    
+#| Define a box uniform prior
 
 def prior(hypercube):
-    """ Uniform prior from [-1,1]^D. """
-    return UniformPrior(0,1)(hypercube)
+    return priorlower+(priorupper-priorlower)*UniformPrior(0,1)(hypercube)  
 
 
-#| Initialise the settings
-nDims = 5
+#Iterate over each cosmology, where funcdict stores the settings for each cosmology (filename, ndims e.t.c.)
+
+funcdict = [[f1,1,'flcdm',False,[0],[1]],[f2,2,'fwcdm',False,[0,-2],[1,2]],[f3,2,'slowroll',False,[0,-2],[1,1]],[f4,2,'bimetric',False,[0,0],[1,6]],[f5,3,'algthaw',False,[0,-2,-4],[1,2,4]],[f6,3,'neutrino',False,[0,0,0],[1,0.25,0.4]],[f7,2,'trans',False,[0,-0.4],[1,0.6]],[f9,2,'clcdm',True,[0,-0.5],[1,0.5]],[f10,3,'cwcdm',True,[0,-0.5,-2],[1,0.5,2]]]
+
 nDerived = 0
-settings = PolyChordSettings(nDims, nDerived)
-settings.file_root = 'CurvedwCDM'
-settings.nlive = 600
-settings.do_clustering = True
-settings.read_resume = False
-
-#| Run PolyChord
-
-output = pypolychord.run_polychord(LCDMlihood, nDims, nDerived, settings, prior)
+nNuisance = 2
+for i in funcdict:
+    nDims = i[1]+nNuisance
+    f = i[0]
+    Curved = i[3]
+    priorlower = np.concatenate((np.array([-20,50]),np.array(i[4])))
+    priorupper = np.concatenate((np.array([-18,100]),np.array(i[5])))
+    settings = PolyChordSettings(nDims, nDerived)
+    settings.nlive = 300
+    settings.do_clustering = True
+    settings.read_resume = True
+    settings.maximise = True
+    settings.file_root = i[2]
+    Output = pypolychord.run_polychord(LCDMlihood, nDims, nDerived, settings, prior)

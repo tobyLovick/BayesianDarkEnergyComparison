@@ -11,7 +11,7 @@ params,names = read_paramnames(rootfile)
 fig, axes = make_2d_axes(params, upper = False)
 
 
-samples2.plot_2d(axes,c = '#CC3311',
+samples.plot_2d(axes,c = '#CC3311',
                       kind={'lower': 'kde_2d', 'diagonal': 'kde_1d'},
                       diagonal_kwargs={'nplot_1d': 1000},
                       lower_kwargs={'nplot_2d': 100**2},

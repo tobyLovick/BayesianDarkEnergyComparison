@@ -68,8 +68,8 @@ def f10(x,m,k,w): #Curved wCDM D=5
 
 #| Defining the likelihood functions
 
-def gengauss(hr,A,B,K): #Generalised Gaussian For all choices of A,B,K parameters
-
+def gengauss(hr,a,B,K): #Generalised Gaussian For all choices of A,B,K parameters
+    A=np.exp(a)
     if np.abs(K) <= 0.001:
       distance = 0.5*(np.dot(hr,np.dot(mcovinv,hr))/A)**B
       
@@ -82,6 +82,25 @@ def gengauss(hr,A,B,K): #Generalised Gaussian For all choices of A,B,K parameter
     
     return float(np.log(B)+special.loggamma(N/2)-special.loggamma(N/(2*B))-0.5*(N*np.log(np.pi*A*(2**(1/B)))+mcovlogdet)-distance)
 
+
+def ugengauss(hr,a,B,K):#Univariate Gaussian Generalisation, for all choices of A,B,K parameters
+    A=np.exp(a)
+    Bflex=1+1/(2*B)
+    if np.abs(K) <= 0.001:
+      NORM = (A**(-0.5))*np.dot(MCminushalf,hr)
+      distance = 0.5*((np.abs(NORM)**(2*B)).sum())
+    else:
+      skewNORM = K*A**(-0.5)*np.dot(MCminushalf,hr)
+      if any(skewNORM > 1):
+        return -np.inf
+      logsum = np.log(1-skewNORM).sum()
+      distance = 0.5*((np.abs((1/K)*np.log(1-skewNORM))**(2*B)).sum())+logsum 
+    return float(-N*(0.5*np.log(A)+special.loggamma(Bflex)+Bflex*np.log(2))-0.5*mcovlogdet-distance)
+  
+    
+    
+    
+
 def L1(hr,params): #Gaussian
     return float(-0.5*(np.dot(hr,np.dot(mcovinv,hr)) + mcovlogdet + N*np.log(2*np.pi)))
     
@@ -89,9 +108,9 @@ def L2(hr,params):#A
     return gengauss(hr,params[0],1,0)
     
 def L3(hr,params):#B
-    return gengauss(hr,1,params[0],0)
+    return gengauss(hr,0,params[0],0)
 def L4(hr,params):#K
-    return gengauss(hr,1,1,params[0])   
+    return gengauss(hr,0,1,params[0])   
 
 def L5(hr,params):#AB
     return gengauss(hr,params[0],params[1],0)
@@ -100,19 +119,41 @@ def L6(hr,params):#AK
     return gengauss(hr,params[0],1,params[1])
     
 def L7(hr,params):#BK
-    return gengauss(hr,1,params[0],params[1])
+    return gengauss(hr,0,params[0],params[1])
     
 def L8(hr,params):#ABK
     return gengauss(hr,params[0],params[1],params[2])
         
 def L9(hr,params):#Student's t
-    NU = params[0]
+    NU = 10**params[0]
     sigmalogdet = mcovlogdet + (N*np.log((NU-2)/NU))
     power = 1 + np.dot(hr,np.dot(mcovinv,hr))/((NU-2))  
     return float(-0.5*N*np.log(NU*np.pi) + special.loggamma((NU+N)/2)-special.loggamma(NU/2)-0.5*sigmalogdet+(-0.5*(NU+N)*np.log(power)))
 
+def L10(hr,params):#UB  
+    return ugengauss(hr,0,params[0],0) 
+    
+def L11(hr,params):#UAB
+    return ugengauss(hr,params[0],params[1],0)
+    
+def L12(hr,params):#UBK
+    return ugengauss(hr,0,params[0],params[1]) 
+    
+def L13(hr,params):#UABK
+    return ugengauss(hr,params[0],params[1],params[2])
+    
+
+def stu(x,v): #1D student's t, seperated out from L14 for readability
+  return (special.loggamma((v+1)/2)-special.loggamma(v/2)-0.5*np.log(np.pi*v)-0.5*(v+1)*(np.log(1 +(x**2)/((v-2)))))
 
 
+def L14(hr,params):#Ustu
+    NU = 10**params[0]
+    sigmalogdet = mcovlogdet + np.log((NU-2)/NU)
+    NORM = np.dot(MCminushalf,hr)
+    return float(-0.5*sigmalogdet+stu(NORM,NU).sum())
+    
+    
 
 def distfunc(x,params): #The function on the inside of the luminosity distance integral
     return 1/np.sqrt(f(x,*params))
@@ -134,7 +175,9 @@ cov = np.reshape(np.loadtxt('Pantheon+SH0ES_STAT+SYS.cov.txt'), [1701,1701])
 
 mask = (df['zHD'] > 0.023) | (df['IS_CALIBRATOR'] == 1)
 mbcorr = df['m_b_corr'].to_numpy()[mask]
-z = df['zHD'].to_numpy()[mask]
+zHD = df['zHD'].to_numpy()[mask]
+zCMB = df['zCMB'].to_numpy()[mask]
+bias=df['biasCor_m_b'].to_numpy()[mask]
 mcov = cov[mask, :][:, mask]
 mcovinv = np.linalg.inv(mcov)
 MCminushalf = linalg.sqrtm(mcovinv)
@@ -142,13 +185,14 @@ MCminushalf = linalg.sqrtm(mcovinv)
 mcovlogdet = np.linalg.slogdet(mcov)[1]
 cephdist = df['CEPH_DIST'].to_numpy()[mask]
 cmask = (df['IS_CALIBRATOR']==0)[mask]
-N = len(z)
+
+N = len(zHD)
 
 #| Define the Likelihood
 def Likelihood(theta):
     nDims = len(theta)
     Sparams = theta[:Smodel[1]]
-    Mb = theta[Smodel[1]]
+    MB = theta[Smodel[1]]
     h = theta[Smodel[1]+1]
     Cparams = theta[-Cmodel[1]:]  
 
@@ -169,9 +213,9 @@ def Likelihood(theta):
     
     MU = 5*np.log10((c/(1000*h))*np.multiply((1+z),comov))+25 #+25 from converting to parsecs inside the log
 
-    hr1 = mbcorr-MU  # Combining the cephied/non-cephied residuals using the cmask
-    hr2 = mbcorr-cephdist
-    hr = (hr1*cmask + hr2*(1-cmask))-Mb
+    hr1 = mb-MU  # Combining the cephied/non-cephied residuals using the cmask
+    hr2 = mb-cephdist
+    hr = (hr1*cmask + hr2*(1-cmask))-MB
     
     logL = Smodel[0](hr,Sparams)
     
@@ -186,17 +230,32 @@ def prior(hypercube):
 
 #| Set up the settings for each cosmology/scatter model
 
+Aprior=[-np.log(5),np.log(5)] ##Comment out as appropriate for log/uniform prior
+#Aprior=[0.2,5]
+
+
 cosdict = [[f1,1,'flcdm',False,[0],[1]],[f2,2,'fwcdm',False,[0,-2],[1,2]],[f3,2,'slowroll',False,[0,-2],[1,1]],[f4,2,'bimetric',False,[0,0],[1,6]],[f5,3,'algthaw',False,[0,-2,-4],[1,2,4]],[f6,3,'neutrino',False,[0,0,0],[1,0.25,0.4]],[f7,2,'trans',False,[0,-0.4],[1,0.6]],[f9,2,'clcdm',True,[0,-0.5],[1,0.5]],[f10,3,'cwcdm',True,[0,-0.5,-2],[1,0.5,2]]]
 
-likedict = [[L1,0,'Gauss',[],[]],[L2,1,'A',[0.5],[2]],[L3,1,'B',[0.01],[3]],[L4,1,'K',[-0.2],[0.2]],[L5,2,'AB',[0.5,0.01],[2,3]],[L6,2,'AK',[0.5,-0.2],[2,0.2]],[L7,2,'BK',[0.01,-0.2],[3,0.2]],[L8,3,'ABK',[0.5,0.01,-0.2],[2,3,0.2]],[L9,1,'Stu',[2],[1000]]]
+likedict = [[L1,0,'Gauss',[],[]],[L2,1,'A',[Aprior[0]],[Aprior[1]]],[L3,1,'B',[0.01],[3]],[L4,1,'K',[-0.2],[0.2]],[L5,2,'AB',[Aprior[0],0.01],[Aprior[1],3]],[L6,2,'AK',[Aprior[0],-0.2],[Aprior[1],0.2]],[L7,2,'BK',[0.01,-0.2],[3,0.2]],[L8,3,'ABK',[Aprior[0],0.01,-0.2],[Aprior[1],3,0.2]],[L9,1,'Stu',[0.3011],[5]],[L10,1,'UB',[0.01],[3]],[L11,2,'UAB',[Aprior[0],0.01],[Aprior[1],3]],[L12,2,'UBK',[0.01,-0.2],[3,0.2]],[L13,3,'UABK',[Aprior[0],0.01,-0.2],[Aprior[1],3,0.2]],[L14,1,'UStu',[0.3011],[5]]]
+
 
 #| Import model choice from cmdline args
-model = int(sys.argv[1])
+arg = int(sys.argv[1])
+
+Biastest,model=divmod(arg,126)
 Snumber,Cnumber = divmod(model,9) 
 Smodel = likedict[Snumber]
 Cmodel = cosdict[Cnumber]
 
-print(Smodel[2]+Cmodel[2]+'test')
+if Biastest==1:
+    z=zCMB
+else:
+    z=zHD
+
+if Biastest==2:
+    mb=mbcorr+bias
+else:
+    mb=mbcorr
 
 #| initialise polychord settings
 nDerived = 0
@@ -207,10 +266,10 @@ priorlower = np.concatenate((np.array(Smodel[3]),np.concatenate((np.array([-20,5
 priorupper = np.concatenate((np.array(Smodel[4]),np.concatenate((np.array([-18,100]),np.array(Cmodel[5])))))
     
 settings = PolyChordSettings(nDims, nDerived)
-settings.nlive = 1000
+settings.nlive = 10000
 settings.do_clustering = True
 settings.read_resume = True
-settings.file_root = Smodel[2]+Cmodel[2]
+settings.file_root = ["","VpecUncorrected","BiasUncorrected"][Biastest]+Smodel[2]+Cmodel[2]
     
     
 Output = pypolychord.run_polychord(Likelihood, nDims, nDerived, settings, prior)

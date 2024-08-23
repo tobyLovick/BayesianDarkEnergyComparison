@@ -170,8 +170,9 @@ def sinn(DC,k=0): #The Sinn function, which accounts for the geometry
 #| Load in Pantheon+ Data, and remove low redshift SNe from the relevant data
 df = pd.read_table('pantheon1.txt', sep = ' ',engine='python')
 cov = np.reshape(np.loadtxt('Pantheon+SH0ES_STAT+SYS.cov.txt'), [1701,1701])
+vpecsystmatics = np.reshape(np.loadtxt('Pantheon+SH0ES_122221_VPEC.cov.txt'), [1701,1701])
 
-
+vpeccov = cov-vpecsystematics
 
 mask = (df['zHD'] > 0.023) | (df['IS_CALIBRATOR'] == 1)
 mbcorr = df['m_b_corr'].to_numpy()[mask]
@@ -179,7 +180,11 @@ zHD = df['zHD'].to_numpy()[mask]
 zCMB = df['zCMB'].to_numpy()[mask]
 bias=df['biasCor_m_b'].to_numpy()[mask]
 mcov = cov[mask, :][:, mask]
+mvpeccov = vpeccov[mask, :][:, mask]
+
 mcovinv = np.linalg.inv(mcov)
+mvpeccovinv = np.linalg.inv(mvpeccov)
+
 MCminushalf = linalg.sqrtm(mcovinv)
 
 mcovlogdet = np.linalg.slogdet(mcov)[1]
@@ -249,6 +254,7 @@ Cmodel = cosdict[Cnumber]
 
 if Biastest==1:
     z=zCMB
+    mcovinv = mvpeccovinv # Removes the systematic error from peculiar velocity corrections from the covariance matrix
 else:
     z=zHD
 

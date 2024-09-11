@@ -98,8 +98,6 @@ def ugengauss(hr,a,B,K):#Univariate Gaussian Generalisation, for all choices of 
     return float(-N*(0.5*np.log(A)+special.loggamma(Bflex)+Bflex*np.log(2))-0.5*mcovlogdet-distance)
   
     
-    
-    
 
 def L1(hr,params): #Gaussian
     return float(-0.5*(np.dot(hr,np.dot(mcovinv,hr)) + mcovlogdet + N*np.log(2*np.pi)))
@@ -153,7 +151,6 @@ def L14(hr,params):#Ustu
     NORM = np.dot(MCminushalf,hr)
     return float(-0.5*sigmalogdet+stu(NORM,NU).sum())
     
-    
 
 def distfunc(x,params): #The function on the inside of the luminosity distance integral
     return 1/np.sqrt(f(x,*params))
@@ -170,15 +167,16 @@ def sinn(DC,k=0): #The Sinn function, which accounts for the geometry
 #| Load in Pantheon+ Data, and remove low redshift SNe from the relevant data
 df = pd.read_table('pantheon1.txt', sep = ' ',engine='python')
 cov = np.reshape(np.loadtxt('Pantheon+SH0ES_STAT+SYS.cov.txt'), [1701,1701])
-vpecsystmatics = np.reshape(np.loadtxt('Pantheon+SH0ES_122221_VPEC.cov.txt'), [1701,1701])
+vpeccov = np.reshape(np.loadtxt('Pantheon+SH0ES_122221_VPEC.cov.txt'), [1701,1701])
 
-vpeccov = cov-vpecsystematics
 
 mask = (df['zHD'] > 0.023) | (df['IS_CALIBRATOR'] == 1)
 mbcorr = df['m_b_corr'].to_numpy()[mask]
 zHD = df['zHD'].to_numpy()[mask]
 zCMB = df['zCMB'].to_numpy()[mask]
+zHEL = df['zHEL'].to_numpy()[mask]
 bias=df['biasCor_m_b'].to_numpy()[mask]
+
 mcov = cov[mask, :][:, mask]
 mvpeccov = vpeccov[mask, :][:, mask]
 
@@ -186,6 +184,8 @@ mcovinv = np.linalg.inv(mcov)
 mvpeccovinv = np.linalg.inv(mvpeccov)
 
 MCminushalf = linalg.sqrtm(mcovinv)
+MvpecCminushalf = linalg.sqrtm(mvpeccovinv)
+
 
 mcovlogdet = np.linalg.slogdet(mcov)[1]
 cephdist = df['CEPH_DIST'].to_numpy()[mask]
@@ -216,7 +216,7 @@ def Likelihood(theta):
       if any(comov<= 0): #This means the universe is too closed, i.e. the max distance is further than the universe's radius
         return -np.inf, []
     
-    MU = 5*np.log10((c/(1000*h))*np.multiply((1+z),comov))+25 #+25 from converting to parsecs inside the log
+    MU = 5*np.log10((c/(1000*h))*np.multiply((1+zHEL),comov))+25 #+25 from converting to parsecs inside the log, zHEL since the luminosity is observed heliocentricy
 
     hr1 = mb-MU  # Combining the cephied/non-cephied residuals using the cmask
     hr2 = mb-cephdist
@@ -255,6 +255,7 @@ Cmodel = cosdict[Cnumber]
 if Biastest==1:
     z=zCMB
     mcovinv = mvpeccovinv # Removes the systematic error from peculiar velocity corrections from the covariance matrix
+    MCminushalf = MvpecCminushalf
 else:
     z=zHD
 
@@ -277,5 +278,5 @@ settings.do_clustering = True
 settings.read_resume = True
 settings.file_root = ["","VpecUncorrected","BiasUncorrected"][Biastest]+Smodel[2]+Cmodel[2]
     
-    
+
 Output = pypolychord.run_polychord(Likelihood, nDims, nDerived, settings, prior)

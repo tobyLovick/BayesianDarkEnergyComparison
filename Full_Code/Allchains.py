@@ -206,7 +206,7 @@ def Likelihood(theta):
     if any(H2<=0): #Any negative H2 expressions are unphysical, therefore have likelihood 0
       return -np.inf, []
     DC0 = sci.quad(distfunc,0,z[0],args=(Cparams,))[0] #Distance to first SNe
-    DC = np.append([0],sci.cumtrapz(1/np.sqrt(H2),z)) + DC0 #Summing distances to the remaining SNe
+    DC = np.append([0],sci.cumulative_trapezoid(1/np.sqrt(H2),z)) + DC0 #Summing distances to the remaining SNe
     comov = DC
     
     #| Adjusting for geometry
